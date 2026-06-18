@@ -1,0 +1,144 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+	--radius: 0.625rem;
+	--text-default: #002366;
+	--color-black: #000000;
+	--color-white: #ffffff;
+	--color-1: oklch(0.82 0.08 285);
+	--color-2: oklch(0.85 0.08 300);
+	--color-3: oklch(0.88 0.06 320);
+	--color-4: oklch(0.86 0.09 340);
+	--color-5: oklch(0.85 0.1 350);
+	--color-6: oklch(0.87 0.07 10);
+	--color-7: oklch(0.88 0.05 220);
+	--color-8: oklch(0.85 0.07 240);
+	--resize-dur: 300ms;
+	--resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--icon-swap-dur: 200ms;
+	--icon-swap-blur: 2px;
+	--icon-swap-start-scale: 0.25;
+	--icon-swap-ease: ease-in-out;
+	--ui-press-dur: 150ms;
+	--ui-press-ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--ui-state-dur: 180ms;
+	--ui-state-ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--background: oklch(1 0 0);
+	--foreground: oklch(0.145 0 0);
+	--card: oklch(1 0 0);
+	--card-foreground: oklch(0.145 0 0);
+	--popover: oklch(1 0 0);
+	--popover-foreground: oklch(0.145 0 0);
+	--primary: oklch(0.205 0 0);
+	--primary-foreground: oklch(0.985 0 0);
+	--secondary: oklch(0.97 0 0);
+	--secondary-foreground: oklch(0.205 0 0);
+	--muted: oklch(0.97 0 0);
+	--muted-foreground: oklch(0.556 0 0);
+	--accent: oklch(0.97 0 0);
+	--accent-foreground: oklch(0.205 0 0);
+	--destructive: oklch(0.577 0.245 27.325);
+	--border: oklch(0.922 0 0);
+	--input: oklch(0.922 0 0);
+	--ring: oklch(0.708 0 0);
+}
+
+@theme inline {
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+
+	html,
+	body {
+		height: 100%;
+		margin: 0;
+		overflow: hidden;
+	}
+
+	body {
+		@apply text-foreground antialiased;
+		background: oklch(0.93 0 0);
+	}
+
+	.t-resize {
+		transition:
+			width var(--resize-dur) var(--resize-ease),
+			height var(--resize-dur) var(--resize-ease);
+		will-change: width, height;
+	}
+
+	.t-resize-instant {
+		transition: none !important;
+	}
+
+	.t-icon-swap {
+		position: relative;
+		display: inline-grid;
+	}
+
+	.t-icon-swap .t-icon {
+		grid-area: 1 / 1;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		filter: blur(var(--icon-swap-blur));
+		transform: scale(var(--icon-swap-start-scale));
+		transition:
+			opacity var(--icon-swap-dur) var(--icon-swap-ease),
+			filter var(--icon-swap-dur) var(--icon-swap-ease),
+			transform var(--icon-swap-dur) var(--icon-swap-ease);
+		will-change: opacity, filter, transform;
+	}
+
+	.t-icon-swap[data-state='left'] .t-icon[data-icon='left'],
+	.t-icon-swap[data-state='center'] .t-icon[data-icon='center'],
+	.t-icon-swap[data-state='right'] .t-icon[data-icon='right'],
+	.t-icon-swap[data-state='justify'] .t-icon[data-icon='justify'],
+	.t-icon-swap[data-state='off'] .t-icon[data-icon='off'],
+	.t-icon-swap[data-state='on'] .t-icon[data-icon='on'],
+	.t-icon-swap[data-state='dash'] .t-icon[data-icon='dash'],
+	.t-icon-swap[data-state='decimal'] .t-icon[data-icon='decimal'],
+	.t-icon-swap[data-state='roman'] .t-icon[data-icon='roman'] {
+		opacity: 1;
+		filter: blur(0);
+		transform: scale(1);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.t-resize {
+			transition: none !important;
+		}
+
+		.t-icon-swap .t-icon {
+			transition: none !important;
+		}
+	}
+}
