@@ -15,6 +15,7 @@
 		createDefaultWorkspace,
 		loadWorkspaceFromStorage
 	} from '$lib/storage/workspace.js';
+	import { setActiveSheetKey } from '$lib/state/active-sheet.js';
 	import { zoomFromWheel } from '$lib/viewport/pan-zoom.js';
 	import { type SheetData, type WriteZone } from '$lib/zone/index.js';
 	import { Plus } from '@lucide/svelte';
@@ -160,7 +161,13 @@
 				<div class="workspace-inner">
 					<div class="sheets-stack">
 						{#each sheets as sheet, index (sheet.id)}
-							<div class="sheet-slot" id="sheet-{sheet.id}">
+							<div
+								class="sheet-slot"
+								id="sheet-{sheet.id}"
+								role="group"
+								aria-label="Feuille {index + 1}"
+								onpointerdown={() => setActiveSheetKey(sheet.id)}
+							>
 								<BristolSheet
 									bind:sheet={sheets[index]}
 									sheetKey={sheet.id}

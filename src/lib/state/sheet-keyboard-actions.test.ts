@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createBlockFromZoneIds } from '$lib/block/block.js';
+import { clearZoneClipboard, copyZonesToClipboard } from '$lib/zone/clipboard.js';
 import { createEmptySheet, createWriteZone } from '$lib/zone/index.js';
 import { resolveSheetKeyAction } from './sheet-keyboard-actions.js';
 import { createEmptySelection, selectSingleZone } from './sheet-selection.js';
@@ -25,12 +26,41 @@ describe('sheet-keyboard-actions', () => {
 		expect(action).toEqual({ type: 'copy' });
 	});
 
-	it('pastes when ctrl+v and zone selected outside editor', () => {
+	it('pastes when ctrl+v on active sheet with clipboard content', () => {
+		clearZoneClipboard();
+		copyZonesToClipboard([createWriteZone({ lineIndex: 1, leftCm: 1, id: 'clip-zone' })]);
 		const action = resolveSheetKeyAction(
 			{ key: 'v', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
 			baseContext()
 		);
 		expect(action).toEqual({ type: 'paste' });
+	});
+
+	it('pastes without zone selection when clipboard has content', () => {
+		clearZoneClipboard();
+		copyZonesToClipboard([createWriteZone({ lineIndex: 1, leftCm: 1, id: 'clip-zone' })]);
+		const action = resolveSheetKeyAction(
+			{ key: 'v', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+			{
+				...baseContext(),
+				selection: createEmptySelection()
+			}
+		);
+		expect(action).toEqual({ type: 'paste' });
+	});
+
+	it('does not paste on inactive sheet', () => {
+		clearZoneClipboard();
+		copyZonesToClipboard([createWriteZone({ lineIndex: 1, leftCm: 1, id: 'clip-zone' })]);
+		const action = resolveSheetKeyAction(
+			{ key: 'v', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+			{
+				...baseContext(),
+				isActiveSheet: false,
+				selection: createEmptySelection()
+			}
+		);
+		expect(action).toEqual({ type: 'none' });
 	});
 
 	it('does not copy while editing', () => {

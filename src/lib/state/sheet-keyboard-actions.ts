@@ -1,4 +1,5 @@
 import type { ArrowDirection } from '$lib/zone/types.js';
+import { hasZonesInClipboard } from '$lib/zone/clipboard.js';
 import {
 	getPrimarySelectedZoneId,
 	getRemovedZoneIds,
@@ -40,10 +41,21 @@ export function resolveSheetKeyAction(
 		hasSelectionForClipboard(context.selection) &&
 		editingZoneId === null &&
 		!context.isEventInZoneEditor &&
-		isShortcut(event)
+		isShortcut(event) &&
+		(event.key === 'c' || event.key === 'C')
 	) {
-		if (event.key === 'c' || event.key === 'C') return { type: 'copy' };
-		if (event.key === 'v' || event.key === 'V') return { type: 'paste' };
+		return { type: 'copy' };
+	}
+
+	if (
+		context.isActiveSheet &&
+		editingZoneId === null &&
+		!context.isEventInZoneEditor &&
+		isShortcut(event) &&
+		(event.key === 'v' || event.key === 'V') &&
+		hasZonesInClipboard()
+	) {
+		return { type: 'paste' };
 	}
 
 	if (primaryId && editingZoneId !== primaryId && !context.isEventInZoneEditor) {

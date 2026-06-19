@@ -20,6 +20,10 @@ export function readZonesFromClipboard(): WriteZone[] | null {
 	return memoryClipboard?.zones.map((zone) => cloneWriteZone(zone)) ?? null;
 }
 
+export function hasZonesInClipboard(): boolean {
+	return (memoryClipboard?.zones.length ?? 0) > 0;
+}
+
 export function clearZoneClipboard(): void {
 	memoryClipboard = null;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	clearZoneClipboard,
 	copyZonesToClipboard,
+	hasZonesInClipboard,
 	readZonesFromClipboard
 } from '$lib/zone/clipboard.js';
 import { createWriteZone } from '$lib/zone/index.js';
@@ -21,5 +22,12 @@ describe('zone clipboard', () => {
 	it('returns null when clipboard is empty', () => {
 		clearZoneClipboard();
 		expect(readZonesFromClipboard()).toBeNull();
+		expect(hasZonesInClipboard()).toBe(false);
+	});
+
+	it('reports clipboard presence', () => {
+		clearZoneClipboard();
+		copyZonesToClipboard([createWriteZone({ lineIndex: 1, leftCm: 1 })]);
+		expect(hasZonesInClipboard()).toBe(true);
 	});
 });
