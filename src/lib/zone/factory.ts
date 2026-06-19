@@ -1,25 +1,32 @@
 import { DEFAULT_ZONE_WIDTH_CM, MIN_ZONE_LINES, type SheetData, type WriteZone } from './types.js';
 
-let zoneIdCounter = 0;
-
-export function createZoneId(): string {
-	zoneIdCounter += 1;
-	return `zone-${zoneIdCounter}`;
-}
-
-export function resetZoneIdCounter(): void {
-	zoneIdCounter = 0;
-}
-
-export function createSheetId(): string {
+export function createEntityId(prefix: string): string {
 	if (typeof crypto !== 'undefined' && crypto.randomUUID) {
 		return crypto.randomUUID();
 	}
-	return `sheet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function createZoneId(): string {
+	return createEntityId('zone');
+}
+
+export function createSheetId(): string {
+	return createEntityId('sheet');
 }
 
 export function createEmptySheet(): SheetData {
-	return { id: createSheetId(), zones: [] };
+	return { id: createSheetId(), zones: [], blocks: [] };
+}
+
+export function cloneWriteZone(zone: WriteZone, patch: Partial<WriteZone> = {}): WriteZone {
+	return createWriteZone({
+		lineIndex: patch.lineIndex ?? zone.lineIndex,
+		leftCm: patch.leftCm ?? zone.leftCm,
+		widthCm: patch.widthCm ?? zone.widthCm,
+		lineCount: patch.lineCount ?? zone.lineCount,
+		content: patch.content ?? zone.content
+	});
 }
 
 export function createWriteZone(input: {

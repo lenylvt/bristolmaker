@@ -23,12 +23,14 @@
 		zone: WriteZone;
 		layout: BristolLayout;
 		selected?: boolean;
+		blockSelected?: boolean;
 		editing?: boolean;
 		editable?: boolean;
 		oninput?: (editor: HTMLElement) => void;
 		onfocus?: (editor: HTMLElement) => void;
 		onblur?: () => void;
-		onselect?: () => void;
+		onselect?: (event: MouseEvent | PointerEvent) => void;
+		oneditrequest?: () => void;
 		onmovestart?: (event: PointerEvent) => void;
 		onresizestart?: (event: PointerEvent, handle: ResizeHandle) => void;
 		onemptyenter?: () => void;
@@ -38,12 +40,14 @@
 		zone,
 		layout,
 		selected = false,
+		blockSelected = false,
 		editing = false,
 		editable = true,
 		oninput,
 		onfocus,
 		onblur,
 		onselect,
+		oneditrequest,
 		onmovestart,
 		onresizestart,
 		onemptyenter
@@ -97,9 +101,14 @@
 	function handleEditorPointerDown(event: PointerEvent) {
 		event.stopPropagation();
 		if (!selected) {
-			onselect?.();
+			onselect?.(event);
 			event.preventDefault();
 		}
+	}
+
+	function handleZoneDoubleClick(event: MouseEvent) {
+		event.stopPropagation();
+		oneditrequest?.();
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -147,7 +156,7 @@
 	function startDrag(event: PointerEvent) {
 		event.stopPropagation();
 		event.preventDefault();
-		onselect?.();
+		onselect?.(event);
 		onmovestart?.(event);
 	}
 
@@ -161,11 +170,13 @@
 <div
 	class="write-zone"
 	class:selected
+	class:block-selected={blockSelected}
 	class:editing
 	class:editable
 	data-zone-id={zone.id}
 	role="group"
 	aria-label="Zone d'écriture"
+	ondblclick={handleZoneDoubleClick}
 	style:top="{topCm}cm"
 	style:left="{zone.leftCm}cm"
 	style:width="{zone.widthCm}cm"
@@ -204,7 +215,7 @@
 			></button>
 		</div>
 
-		{#if selected}
+		{#if selected && (!blockSelected || editing)}
 			{#each CORNER_HANDLES as handle (handle)}
 				<button
 					type="button"
@@ -274,6 +285,10 @@
 
 	.write-zone.editable.selected .zone-chrome {
 		border-color: oklch(0.78 0 0 / 0.72);
+	}
+
+	.write-zone.block-selected .zone-chrome {
+		border-color: oklch(0.68 0.08 250 / 0.55);
 	}
 
 	.write-zone.editable.selected:not(.editing) .zone-editor {

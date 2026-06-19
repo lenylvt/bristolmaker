@@ -1,3 +1,5 @@
+import type { ZoneBlock } from '$lib/block/types.js';
+
 export const MIN_ZONE_WIDTH_CM = 1;
 export const DEFAULT_ZONE_WIDTH_CM = 5;
 export const MIN_ZONE_LINES = 1;
@@ -14,6 +16,7 @@ export type WriteZone = {
 export type SheetData = {
 	id: string;
 	zones: WriteZone[];
+	blocks: ZoneBlock[];
 };
 
 export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';

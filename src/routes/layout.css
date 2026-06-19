@@ -4,7 +4,7 @@
 
 :root {
 	--radius: 0.625rem;
-	--text-default: #002366;
+	--text-default: #000000;
 	--color-black: #000000;
 	--color-white: #ffffff;
 	--color-1: oklch(0.82 0.08 285);
@@ -17,6 +17,11 @@
 	--color-8: oklch(0.85 0.07 240);
 	--resize-dur: 300ms;
 	--resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--dropdown-open-dur: 250ms;
+	--dropdown-close-dur: 150ms;
+	--dropdown-pre-scale: 0.97;
+	--dropdown-closing-scale: 0.99;
+	--dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
 	--icon-swap-dur: 200ms;
 	--icon-swap-blur: 2px;
 	--icon-swap-start-scale: 0.25;
@@ -98,6 +103,52 @@
 		transition: none !important;
 	}
 
+	.t-dropdown {
+		transform-origin: top left;
+		transform: scale(var(--dropdown-pre-scale));
+		opacity: 0;
+		pointer-events: none;
+		transition:
+			transform var(--dropdown-open-dur) var(--dropdown-ease),
+			opacity var(--dropdown-open-dur) var(--dropdown-ease);
+		will-change: transform, opacity;
+	}
+
+	.t-dropdown[data-origin='top-right'] {
+		transform-origin: top right;
+	}
+
+	.t-dropdown[data-origin='top-center'] {
+		transform-origin: top center;
+	}
+
+	.t-dropdown[data-origin='bottom-left'] {
+		transform-origin: bottom left;
+	}
+
+	.t-dropdown[data-origin='bottom-center'] {
+		transform-origin: bottom center;
+	}
+
+	.t-dropdown[data-origin='bottom-right'] {
+		transform-origin: bottom right;
+	}
+
+	.t-dropdown.is-open {
+		transform: scale(1);
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	.t-dropdown.is-closing {
+		transform: scale(var(--dropdown-closing-scale));
+		opacity: 0;
+		pointer-events: none;
+		transition:
+			transform var(--dropdown-close-dur) var(--dropdown-ease),
+			opacity var(--dropdown-close-dur) var(--dropdown-ease);
+	}
+
 	.t-icon-swap {
 		position: relative;
 		display: inline-grid;
@@ -134,6 +185,10 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.t-resize {
+			transition: none !important;
+		}
+
+		.t-dropdown {
 			transition: none !important;
 		}
 

@@ -1,17 +1,47 @@
 <script lang="ts">
 	import BristolSheet from '$lib/components/bristol/BristolSheet.svelte';
+	import WorkspaceMenu from '$lib/components/workspace/WorkspaceMenu.svelte';
 	import SelectionFormatPill from '$lib/components/format/SelectionFormatPill.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { MAX_SHEETS } from '$lib/sheet/count.js';
 	import { addSheet, removeSheet } from '$lib/sheet/workbook.js';
+	import { createDebouncedWorkspaceSave } from '$lib/storage/debounced-workspace-save.js';
+	import {
+		exportWorkspaceFile,
+		isValidWorkspaceFile,
+		readWorkspaceFile
+	} from '$lib/storage/workspace-io.js';
+	import {
+		createDefaultWorkspace,
+		loadWorkspaceFromStorage
+	} from '$lib/storage/workspace.js';
 	import { zoomFromWheel } from '$lib/viewport/pan-zoom.js';
-	import { createEmptySheet, type SheetData, type WriteZone } from '$lib/zone/index.js';
-	import { Plus, Printer } from '@lucide/svelte';
-	import { tick } from 'svelte';
+	import { type SheetData, type WriteZone } from '$lib/zone/index.js';
+	import { Plus } from '@lucide/svelte';
+	import { onMount, tick } from 'svelte';
 
-	let sheets = $state<SheetData[]>([createEmptySheet()]);
+	let sheets = $state<SheetData[]>(createDefaultWorkspace());
 	let scale = $state(1);
 	let activeEditor = $state<HTMLElement | null>(null);
+	let storageReady = $state(false);
+	let importInputEl = $state<HTMLInputElement | null>(null);
+
+	const debouncedSave = createDebouncedWorkspaceSave(300);
+
+	onMount(() => {
+		const stored = loadWorkspaceFromStorage();
+		if (stored) sheets = stored;
+		storageReady = true;
+
+		return () => {
+			debouncedSave.dispose();
+		};
+	});
+
+	$effect(() => {
+		if (!storageReady) return;
+		debouncedSave.schedule(sheets);
+	});
 
 	const canAddSheet = $derived(sheets.length < MAX_SHEETS);
 
@@ -59,6 +89,35 @@
 		window.print();
 	}
 
+	function createNewWorkspace() {
+		sheets = createDefaultWorkspace();
+		activeEditor = null;
+		debouncedSave.flush(sheets);
+	}
+
+	function exportWorkspace() {
+		debouncedSave.flush(sheets);
+		exportWorkspaceFile(sheets);
+	}
+
+	function openImportPicker() {
+		importInputEl?.click();
+	}
+
+	async function handleImportFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file || !isValidWorkspaceFile(file)) return;
+
+		const imported = await readWorkspaceFile(file);
+		if (!imported) return;
+
+		sheets = imported;
+		activeEditor = null;
+		debouncedSave.flush(sheets);
+	}
+
 	function handleWheel(event: WheelEvent) {
 		if (!event.ctrlKey && !event.metaKey) return;
 		event.preventDefault();
@@ -74,15 +133,21 @@
 	<main class="workspace no-print">
 		<header class="toolbar">
 			<h1 class="title caveat-brand">Bristol</h1>
-			<Button
-				variant="outline"
-				size="icon-sm"
-				class="bg-white"
-				aria-label="Imprimer"
-				onclick={printSheets}
-			>
-				<Printer />
-			</Button>
+			<WorkspaceMenu
+				onprint={printSheets}
+				onnew={createNewWorkspace}
+				onimport={openImportPicker}
+				onexport={exportWorkspace}
+			/>
+			<input
+				bind:this={importInputEl}
+				type="file"
+				accept="application/json,.json"
+				class="sr-only"
+				aria-hidden="true"
+				tabindex="-1"
+				onchange={handleImportFile}
+			/>
 		</header>
 
 		<div
@@ -99,6 +164,7 @@
 								<BristolSheet
 									bind:sheet={sheets[index]}
 									sheetKey={sheet.id}
+									viewportScale={scale}
 									deletable={index > 0}
 									ondelete={() => handleRemoveSheet(sheet.id)}
 									oneditorfocus={handleEditorFocus}
@@ -169,6 +235,18 @@
 		font-size: 2rem;
 		line-height: 1;
 		letter-spacing: 0.01em;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.viewport {

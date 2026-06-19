@@ -17,7 +17,6 @@ import {
 	measureEditorLineCount,
 	moveZoneByArrow,
 	moveZoneWithGrab,
-	resetZoneIdCounter,
 	resizeZone,
 	snapYCmToLineIndex
 } from './index.js';
@@ -42,7 +41,6 @@ describe('write-zone', () => {
 	});
 
 	it('resizes east and south handles', () => {
-		resetZoneIdCounter();
 		const zone = createWriteZone({ lineIndex: 3, leftCm: 2, widthCm: 4, lineCount: 2 });
 
 		const resized = resizeZone(zone, 'se', { xCm: 1, yCm: 0.5 }, layout, 14.8);
@@ -51,7 +49,6 @@ describe('write-zone', () => {
 	});
 
 	it('moves zone relative to grab offset', () => {
-		resetZoneIdCounter();
 		const zone = createWriteZone({ lineIndex: 3, leftCm: 2, widthCm: 4, lineCount: 2 });
 		const moved = moveZoneWithGrab(zone, { xCm: 5, yCm: 3 }, { xCm: 0.5, yCm: 0.2 }, layout, 14.8);
 
@@ -66,7 +63,6 @@ describe('write-zone', () => {
 	});
 
 	it('finds the next free line for zone creation', () => {
-		resetZoneIdCounter();
 		const zones = [
 			createWriteZone({ lineIndex: 1, leftCm: 0, widthCm: 14.8, lineCount: 1 }),
 			createWriteZone({ lineIndex: 3, leftCm: 0, lineCount: 2 })
@@ -81,7 +77,6 @@ describe('write-zone', () => {
 	});
 
 	it('places the next zone after the last occupied line, skipping middle gaps', () => {
-		resetZoneIdCounter();
 		const zones = [
 			createWriteZone({ lineIndex: 1, leftCm: 0, lineCount: 1 }),
 			createWriteZone({ lineIndex: 2, leftCm: 5, widthCm: 5, lineCount: 1 }),
@@ -93,7 +88,6 @@ describe('write-zone', () => {
 	});
 
 	it('places the next zone on the line after a single right-aligned zone', () => {
-		resetZoneIdCounter();
 		const zones = [createWriteZone({ lineIndex: 1, leftCm: 5, widthCm: 5, lineCount: 1 })];
 
 		expect(isLineOccupiedByZone(zones, 1)).toBe(true);
@@ -101,7 +95,6 @@ describe('write-zone', () => {
 	});
 
 	it('places after the lowest block when earlier lines have left-aligned zones', () => {
-		resetZoneIdCounter();
 		const zones = [
 			createWriteZone({ lineIndex: 1, leftCm: 0, lineCount: 1 }),
 			createWriteZone({ lineIndex: 3, leftCm: 0, lineCount: 1 })
@@ -111,7 +104,6 @@ describe('write-zone', () => {
 	});
 
 	it('moves a selected zone with arrow directions', () => {
-		resetZoneIdCounter();
 		const zone = createWriteZone({ lineIndex: 3, leftCm: 2, widthCm: 4, lineCount: 2 });
 
 		expect(moveZoneByArrow(zone, 'left', layout, 14.8).leftCm).toBe(1.5);
@@ -119,7 +111,6 @@ describe('write-zone', () => {
 	});
 
 	it('creates a zone snapped to a line', () => {
-		resetZoneIdCounter();
 		const zone = createZoneOnLine(4, 14.8);
 		expect(zone.lineIndex).toBe(4);
 		expect(zone.widthCm).toBe(5);

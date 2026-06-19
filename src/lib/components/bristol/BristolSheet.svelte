@@ -1,6 +1,17 @@
 <script lang="ts">
 	import WriteZoneBlock from '$lib/components/bristol/WriteZone.svelte';
+	import ZoneActionPill from '$lib/components/bristol/ZoneActionPill.svelte';
 	import { buildBristolLayout, getWritableArea, TEXT_OFFSET } from '$lib/bristol/layout.js';
+	import {
+		createBlockFromZoneIds,
+		duplicateBlock,
+		moveBlockZones,
+		moveZonesByDelta,
+		pasteZones,
+		removeBlock,
+		removeZonesFromBlocks
+	} from '$lib/block/block.js';
+	import { copyZonesToClipboard, readZonesFromClipboard } from '$lib/zone/clipboard.js';
 	import {
 		clientToSheetCm,
 		createZoneAtPoint,
@@ -14,7 +25,6 @@
 		moveZoneByArrow,
 		moveZoneWithGrab,
 		resizeZone,
-		type ArrowDirection,
 		type ResizeHandle,
 		type SheetData,
 		type WriteZone,
@@ -27,7 +37,30 @@
 	} from '$lib/overflow/index.js';
 	import { sanitizeEditorHtml } from '$lib/editor/sanitize.js';
 	import { isActiveSheetKey, setActiveSheetKey } from '$lib/state/active-sheet.js';
+	import { resolveSheetKeyAction } from '$lib/state/sheet-keyboard-actions.js';
 	import { registerSheetKeydown } from '$lib/state/sheet-keyboard.js';
+	import {
+		applyCreateBlockSelection,
+		applyDuplicateBlockSelection,
+		applyPasteSelection,
+		blurZoneEdit,
+		clearSelection,
+		createEmptySelection,
+		enterZoneEdit,
+		getHighlightedZoneIds,
+		getMoveGroupZoneIds,
+		getPillMode,
+		getPrimarySelectedZoneId,
+		getSelectedZones,
+		isEditingZone,
+		isZoneBlockSelected,
+		isZoneSelected,
+		removeZoneFromSelection,
+		selectSingleZone,
+		selectZone,
+		type SheetSelection
+	} from '$lib/state/sheet-selection.js';
+	import { trackSelectionAnchor } from '$lib/viewport/selection-anchor.js';
 	import { tick } from 'svelte';
 
 	type OverflowPayload = {
@@ -38,6 +71,7 @@
 	type Props = {
 		sheet?: SheetData;
 		sheetKey?: string;
+		viewportScale?: number;
 		editable?: boolean;
 		deletable?: boolean;
 		class?: string;
@@ -47,8 +81,9 @@
 	};
 
 	let {
-		sheet = $bindable({ id: 'sheet-0', zones: [] }),
+		sheet = $bindable({ id: 'sheet-0', zones: [], blocks: [] }),
 		sheetKey = 'sheet-0',
+		viewportScale = 1,
 		editable = true,
 		deletable = false,
 		class: className = '',
@@ -58,14 +93,17 @@
 	}: Props = $props();
 
 	let sheetEl = $state<HTMLElement | null>(null);
-	let selectedZoneId = $state<string | null>(null);
+	let selection = $state<SheetSelection>(createEmptySelection());
+	let pillAnchor = $state<{ top: number; left: number } | null>(null);
 
 	type Interaction =
 		| {
 				type: 'move';
-				zoneId: string;
+				anchorZoneId: string;
+				zoneIds: string[];
 				origin: ZoneGeometry;
 				grabOffset: { xCm: number; yCm: number };
+				blockId: string | null;
 		  }
 		| {
 				type: 'resize';
@@ -77,11 +115,11 @@
 		  };
 
 	let interaction = $state<Interaction | null>(null);
-	let editingZoneId = $state<string | null>(null);
 
 	const layout = $derived(buildBristolLayout());
 	const area = $derived(getWritableArea(layout));
 	const { specs } = $derived(layout);
+	const pillMode = $derived(getPillMode(selection));
 
 	function updateZone(zoneId: string, patch: Partial<WriteZone>) {
 		sheet = {
@@ -111,9 +149,9 @@
 			const range = document.createRange();
 			range.selectNodeContents(editor);
 			range.collapse(false);
-			const selection = window.getSelection();
-			selection?.removeAllRanges();
-			selection?.addRange(range);
+			const selectionApi = window.getSelection();
+			selectionApi?.removeAllRanges();
+			selectionApi?.addRange(range);
 		});
 	}
 
@@ -121,16 +159,12 @@
 		setActiveSheetKey(sheetKey);
 	}
 
-	function isZoneEditing(zoneId: string): boolean {
-		return editingZoneId === zoneId;
-	}
-
 	function isEventInZoneEditor(event: KeyboardEvent): boolean {
 		return !!(event.target as HTMLElement).closest('.zone-editor');
 	}
 
 	async function createZoneOnNextFreeLine() {
-		purgeEmptyZone(selectedZoneId);
+		purgeEmptyZone(getPrimarySelectedZoneId(sheet, selection));
 
 		const placement = findNextZonePlacement(sheet.zones, layout);
 		if (!placement) return;
@@ -141,71 +175,112 @@
 			widthCm: DEFAULT_ZONE_WIDTH_CM
 		});
 		sheet = { ...sheet, zones: [...sheet.zones, zone] };
-		selectedZoneId = zone.id;
-		editingZoneId = null;
+		selection = selectSingleZone(zone.id);
 	}
 
-	function moveSelectedZone(direction: ArrowDirection) {
-		if (!selectedZoneId) return;
+	function moveSelectionByArrow(direction: import('$lib/zone/types.js').ArrowDirection) {
+		const anchorId = getPrimarySelectedZoneId(sheet, selection);
+		if (!anchorId) return;
 
-		const zone = sheet.zones.find((item) => item.id === selectedZoneId);
+		const zone = sheet.zones.find((item) => item.id === anchorId);
 		if (!zone) return;
 
 		const next = moveZoneByArrow(getZoneGeometry(zone), direction, layout, specs.widthCm);
-		updateZone(selectedZoneId, next);
+
+		if (selection.selectedBlockId) {
+			sheet = moveBlockZones(sheet, selection.selectedBlockId, anchorId, next);
+			return;
+		}
+
+		if (selection.selectedZoneIds.length > 1) {
+			sheet = moveZonesByDelta(sheet, selection.selectedZoneIds, anchorId, next);
+			return;
+		}
+
+		updateZone(anchorId, next);
+	}
+
+	function copySelectionToClipboard() {
+		const zones = getSelectedZones(sheet, selection);
+		if (zones.length === 0) return;
+		copyZonesToClipboard(zones);
+	}
+
+	function pasteFromClipboard() {
+		const zones = readZonesFromClipboard();
+		if (!zones || zones.length === 0) return;
+
+		const result = pasteZones(sheet, zones);
+		sheet = result.sheet;
+		selection = applyPasteSelection(result);
+	}
+
+	function handleCreateBlock() {
+		if (selection.selectedZoneIds.length < 2) return;
+		const result = createBlockFromZoneIds(sheet, selection.selectedZoneIds);
+		sheet = result.sheet;
+		selection = applyCreateBlockSelection(result.blockId);
+	}
+
+	function handleUnblock() {
+		if (!selection.selectedBlockId) return;
+		sheet = removeBlock(sheet, selection.selectedBlockId);
+		selection = clearSelection(selection);
+	}
+
+	function handleDuplicateBlock() {
+		if (!selection.selectedBlockId) return;
+		const result = duplicateBlock(sheet, selection.selectedBlockId);
+		sheet = result.sheet;
+		selection = applyDuplicateBlockSelection(result.newBlockId);
 	}
 
 	function handleDocumentKeydown(event: KeyboardEvent) {
-		if (!editable || !sheetEl) return;
+		if (!sheetEl) return;
 
 		const target = event.target as HTMLElement | null;
 		if (target?.closest('input, textarea, button, [role="toolbar"]')) return;
 
-		if (selectedZoneId && !isZoneEditing(selectedZoneId) && !isEventInZoneEditor(event)) {
-			if (event.key === 'Delete' || event.key === 'Backspace') {
-				event.preventDefault();
-				const zoneId = selectedZoneId;
-				selectedZoneId = null;
-				editingZoneId = null;
-				removeZone(zoneId);
-				return;
-			}
+		const action = resolveSheetKeyAction(event, {
+			editable,
+			isActiveSheet: isActiveSheetKey(sheetKey),
+			selection,
+			sheet,
+			isEventInZoneEditor: isEventInZoneEditor(event)
+		});
 
-			if (event.key === 'Enter' && !event.shiftKey) {
-				event.preventDefault();
-				focusZoneEditor(selectedZoneId, true);
-				return;
-			}
-
-			if (event.key === 'ArrowUp') {
-				event.preventDefault();
-				moveSelectedZone('up');
-				return;
-			}
-
-			if (event.key === 'ArrowDown') {
-				event.preventDefault();
-				moveSelectedZone('down');
-				return;
-			}
-
-			if (event.key === 'ArrowLeft') {
-				event.preventDefault();
-				moveSelectedZone('left');
-				return;
-			}
-
-			if (event.key === 'ArrowRight') {
-				event.preventDefault();
-				moveSelectedZone('right');
-				return;
-			}
+		if (action.type === 'copy') {
+			event.preventDefault();
+			copySelectionToClipboard();
+			return;
 		}
 
-		if (event.key === 'Enter' && !event.shiftKey && !isEventInZoneEditor(event) && !editingZoneId) {
-			if (!isActiveSheetKey(sheetKey)) return;
-			if (selectedZoneId && !isZoneEditing(selectedZoneId)) return;
+		if (action.type === 'paste') {
+			event.preventDefault();
+			pasteFromClipboard();
+			return;
+		}
 
+		if (action.type === 'delete') {
+			event.preventDefault();
+			selection = clearSelection({ ...selection, editingZoneId: null });
+			removeZones(action.zoneIds);
+			return;
+		}
+
+		if (action.type === 'focus-editor') {
+			event.preventDefault();
+			focusZoneEditor(action.zoneId, true);
+			return;
+		}
+
+		if (action.type === 'move') {
+			event.preventDefault();
+			moveSelectionByArrow(action.direction);
+			return;
+		}
+
+		if (action.type === 'create-zone') {
 			event.preventDefault();
 			void createZoneOnNextFreeLine();
 		}
@@ -215,22 +290,32 @@
 		const zone = sheet.zones.find((item) => item.id === zoneId);
 		if (!zone || !isZoneEmpty(zone.content)) return;
 
-		if (selectedZoneId === zoneId) selectedZoneId = null;
-		editingZoneId = null;
+		selection = removeZoneFromSelection(selection, zoneId);
+		selection = { ...selection, editingZoneId: null };
 		removeZone(zoneId);
 		void createZoneOnNextFreeLine();
 	}
 
 	function handleEditorFocus(zoneId: string, editor: HTMLElement) {
 		markSheetActive();
-		selectedZoneId = zoneId;
-		editingZoneId = zoneId;
+		selection = selectSingleZone(zoneId, true);
 		oneditorfocus?.(editor);
 	}
 
 	function handleEditorBlur(zoneId: string) {
 		flushZoneEditor(zoneId);
-		if (editingZoneId === zoneId) editingZoneId = null;
+		selection = blurZoneEdit(selection, zoneId);
+	}
+
+	function handleZoneSelect(zoneId: string, event: MouseEvent) {
+		markSheetActive();
+		selection = selectZone(sheet, selection, zoneId, event.shiftKey);
+	}
+
+	function handleZoneEditRequest(zoneId: string) {
+		markSheetActive();
+		selection = enterZoneEdit(zoneId);
+		focusZoneEditor(zoneId, true);
 	}
 
 	function handleSheetDoubleClick(event: MouseEvent) {
@@ -248,12 +333,23 @@
 		);
 		const zone = createZoneAtPoint(point, layout, specs.widthCm);
 		sheet = { ...sheet, zones: [...sheet.zones, zone] };
-		selectedZoneId = zone.id;
+		selection = selectSingleZone(zone.id);
 		focusZoneEditor(zone.id);
 	}
 
 	function removeZone(zoneId: string) {
-		sheet = { ...sheet, zones: sheet.zones.filter((zone) => zone.id !== zoneId) };
+		removeZones([zoneId]);
+	}
+
+	function removeZones(zoneIds: string[]) {
+		const removed = new Set(zoneIds);
+		sheet = removeZonesFromBlocks(
+			{
+				...sheet,
+				zones: sheet.zones.filter((zone) => !removed.has(zone.id))
+			},
+			zoneIds
+		);
 	}
 
 	function purgeEmptyZone(zoneId: string | null) {
@@ -267,11 +363,11 @@
 	function handleSheetPointerDown(event: PointerEvent) {
 		if (!editable) return;
 		if ((event.target as HTMLElement).closest('.write-zone')) return;
+		if ((event.target as HTMLElement).closest('.zone-action-pill')) return;
 
 		markSheetActive();
-		purgeEmptyZone(selectedZoneId);
-		selectedZoneId = null;
-		editingZoneId = null;
+		purgeEmptyZone(getPrimarySelectedZoneId(sheet, selection));
+		selection = clearSelection({ ...selection, editingZoneId: null });
 	}
 
 	function startMove(zoneId: string, event: PointerEvent) {
@@ -294,9 +390,26 @@
 			yCm: pointer.yCm - getZoneTopCm(zone.lineIndex, layout)
 		};
 
-		selectedZoneId = zoneId;
-		editingZoneId = null;
-		interaction = { type: 'move', zoneId, origin: getZoneGeometry(zone), grabOffset };
+		const groupZoneIds = getMoveGroupZoneIds(sheet, selection, zoneId);
+		const blockId =
+			selection.selectedBlockId && groupZoneIds.length > 1 && groupZoneIds.includes(zoneId)
+				? selection.selectedBlockId
+				: null;
+
+		if (!selection.selectedBlockId && groupZoneIds.length === 1) {
+			selection = selectSingleZone(zoneId);
+		} else {
+			selection = { ...selection, editingZoneId: null };
+		}
+
+		interaction = {
+			type: 'move',
+			anchorZoneId: zoneId,
+			zoneIds: groupZoneIds,
+			origin: getZoneGeometry(zone),
+			grabOffset,
+			blockId
+		};
 		window.addEventListener('pointermove', handlePointerMove);
 		window.addEventListener('pointerup', handlePointerUp);
 		(event.currentTarget as HTMLElement)?.setPointerCapture?.(event.pointerId);
@@ -310,8 +423,7 @@
 
 		flushZoneEditor(zoneId);
 
-		selectedZoneId = zoneId;
-		editingZoneId = null;
+		selection = selectSingleZone(zoneId);
 		interaction = {
 			type: 'resize',
 			zoneId,
@@ -346,7 +458,18 @@
 				layout,
 				specs.widthCm
 			);
-			updateZone(current.zoneId, next);
+
+			if (current.zoneIds.length === 1) {
+				updateZone(current.anchorZoneId, next);
+				return;
+			}
+
+			if (current.blockId) {
+				sheet = moveBlockZones(sheet, current.blockId, current.anchorZoneId, next);
+				return;
+			}
+
+			sheet = moveZonesByDelta(sheet, current.zoneIds, current.anchorZoneId, next);
 			return;
 		}
 
@@ -415,6 +538,25 @@
 		if (!editor) return;
 		persistZoneContent(zoneId, editor);
 	}
+
+	$effect(() => {
+		if (!editable) {
+			pillAnchor = null;
+			return;
+		}
+
+		selection;
+		sheet.zones;
+		viewportScale;
+
+		return trackSelectionAnchor({
+			getRoot: () => sheetEl,
+			getZoneIds: () => getHighlightedZoneIds(sheet, selection),
+			onAnchorChange: (anchor) => {
+				pillAnchor = anchor;
+			}
+		});
+	});
 
 	$effect(() => {
 		if (!editable) return;
@@ -510,13 +652,13 @@
 			{zone}
 			{layout}
 			{editable}
-			selected={editable && selectedZoneId === zone.id}
-			editing={editable && editingZoneId === zone.id}
-			onselect={() => {
-				markSheetActive();
-				selectedZoneId = zone.id;
-				editingZoneId = null;
-			}}
+			selected={editable && isZoneSelected(sheet, selection, zone.id)}
+			blockSelected={editable &&
+				isZoneBlockSelected(sheet, selection, zone.id) &&
+				!isEditingZone(selection, zone.id)}
+			editing={editable && isEditingZone(selection, zone.id)}
+			onselect={(event) => handleZoneSelect(zone.id, event)}
+			oneditrequest={() => handleZoneEditRequest(zone.id)}
 			oninput={(editor) => handleZoneInput(zone.id, editor)}
 			onfocus={(editor) => handleEditorFocus(zone.id, editor)}
 			onblur={() => handleEditorBlur(zone.id)}
@@ -526,6 +668,16 @@
 		/>
 	{/each}
 </div>
+
+{#if editable}
+	<ZoneActionPill
+		anchor={pillAnchor}
+		mode={pillMode}
+		oncreateblock={handleCreateBlock}
+		onunblock={handleUnblock}
+		onduplicate={handleDuplicateBlock}
+	/>
+{/if}
 
 <style>
 	.writable-surface {
