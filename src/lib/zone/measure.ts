@@ -65,10 +65,17 @@ export function measureEditorLineCount(editor: HTMLElement, currentLineCount: nu
 	return measured;
 }
 
+/** Compte uniquement les retours à la ligne explicites (pas le wrap visuel). */
+export function measureExplicitLineCount(editor: HTMLElement): number {
+	const raw = editor.innerText.replace(/\u200b/g, '');
+	if (!raw.trim()) return MIN_ZONE_LINES;
+	return Math.max(MIN_ZONE_LINES, raw.split('\n').length);
+}
+
 /** Nombre minimal de lignes requis par le contenu actuel d'une zone. */
 export function measureZoneMinLineCount(zone: WriteZone, editor?: HTMLElement | null): number {
 	if (editor && !isEditorContentEmpty(editor)) {
-		return measureContentLineCount(editor);
+		return measureExplicitLineCount(editor);
 	}
 
 	if (!isZoneEmpty(zone.content)) {

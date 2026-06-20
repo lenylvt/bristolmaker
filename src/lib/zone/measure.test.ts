@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildBristolLayout } from '$lib/bristol/layout.js';
 import { plainLinesToHtml } from '$lib/editor/html.js';
-import { createWriteZone, measureZoneMinLineCount, resizeZone } from '$lib/zone/index.js';
+import {
+	createWriteZone,
+	measureExplicitLineCount,
+	measureZoneMinLineCount,
+	resizeZone
+} from '$lib/zone/index.js';
 
 describe('measureZoneMinLineCount', () => {
 	it('returns one line for empty zones', () => {
@@ -33,15 +38,16 @@ describe('measureZoneMinLineCount', () => {
 		expect(measureZoneMinLineCount(zone)).toBe(5);
 	});
 
-	it('uses wrapped editor height when available', () => {
-		const zone = createWriteZone({ lineIndex: 1, leftCm: 0, widthCm: 5, lineCount: 1 });
+	it('ignores visual wrapping for the resize minimum', () => {
+		const zone = createWriteZone({ lineIndex: 1, leftCm: 0, widthCm: 5, lineCount: 2 });
 		const editor = {
 			innerText: 'a very long line that wraps visually',
 			clientHeight: 20,
 			scrollHeight: 58
 		} as unknown as HTMLElement;
 
-		expect(measureZoneMinLineCount(zone, editor)).toBe(3);
+		expect(measureExplicitLineCount(editor)).toBe(1);
+		expect(measureZoneMinLineCount(zone, editor)).toBe(1);
 	});
 });
 

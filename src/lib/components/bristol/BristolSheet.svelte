@@ -587,18 +587,7 @@
 		const zone = sheet.zones.find((item) => item.id === zoneId);
 		if (!zone) return;
 
-		const content = sanitizeEditorHtml(editor.innerHTML);
-		const maxLines = getZoneMaxLines(zone, layout);
-
-		if (isZoneEmpty(content)) {
-			updateZone(zoneId, { content, lineCount: zone.lineCount });
-			return;
-		}
-
-		const contentLines = measureZoneMinLineCount({ ...zone, content }, editor);
-		const lineCount = Math.min(Math.max(contentLines, MIN_ZONE_LINES), maxLines);
-
-		updateZone(zoneId, { content, lineCount });
+		updateZone(zoneId, { content: sanitizeEditorHtml(editor.innerHTML) });
 	}
 
 	function flushZoneEditor(zoneId: string) {
