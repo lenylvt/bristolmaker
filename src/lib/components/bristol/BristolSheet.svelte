@@ -27,7 +27,6 @@
 		findNextZonePlacement,
 		getZoneTopCm,
 		isZoneEmpty,
-		measureEditorLineCount,
 		measureZoneMinLineCount,
 		MIN_ZONE_LINES,
 		moveZoneByArrow,
@@ -41,7 +40,7 @@
 	import {
 		createContinuationZone,
 		getZoneMaxLines,
-		splitZoneEditorOverflow
+		planZoneInputOverflow
 	} from '$lib/overflow/index.js';
 	import { sanitizeEditorHtml } from '$lib/editor/sanitize.js';
 	import { isActiveSheetKey, setActiveSheetKey } from '$lib/state/active-sheet.js';
@@ -336,7 +335,7 @@
 	function handleZoneEditRequest(zoneId: string) {
 		markSheetActive();
 		selection = enterZoneEdit(zoneId);
-		focusZoneEditor(zoneId, true);
+		focusZoneEditor(zoneId);
 	}
 
 	function handleSheetDoubleClick(event: MouseEvent) {
@@ -544,43 +543,49 @@
 
 		persistZoneContent(zoneId, editor);
 
-		const maxLines = getZoneMaxLines(zone, layout);
-		const measuredLines = measureEditorLineCount(editor, zone.lineCount);
+		for (let attempt = 0; attempt < 4; attempt++) {
+			const current = sheet.zones.find((item) => item.id === zoneId);
+			if (!current) return;
 
-		await tick();
-
-		if (editor.scrollHeight <= editor.clientHeight + 1 && measuredLines <= maxLines) {
-			return;
-		}
-
-		const split = splitZoneEditorOverflow(editor, maxLines);
-		updateZone(zoneId, {
-			content: sanitizeEditorHtml(split.current),
-			lineCount: split.lineCount
-		});
-
-		if (!split.overflow) return;
-
-		const overflowLineCount = Math.max(1, split.overflow.split('\n').length);
-
-		if (continuous) {
-			const continuationLineIndex = zone.lineIndex + split.lineCount;
-			const continuation = createContinuationZone(
-				zone,
-				split.overflow,
-				overflowLineCount,
-				continuationLineIndex
-			);
-			sheet = { ...sheet, zones: [...sheet.zones, continuation] };
 			await tick();
-			focusZoneEditor(continuation.id);
+
+			const maxLines = getZoneMaxLines(current, layout);
+			const plan = planZoneInputOverflow(editor, current.lineCount, maxLines);
+
+			if (plan.type === 'noop') return;
+
+			if (plan.type === 'expand') {
+				updateZone(zoneId, { lineCount: plan.lineCount });
+				continue;
+			}
+
+			updateZone(zoneId, {
+				content: sanitizeEditorHtml(plan.current),
+				lineCount: plan.lineCount
+			});
+
+			const overflowLineCount = Math.max(1, plan.overflow.split('\n').length);
+
+			if (continuous) {
+				const continuationLineIndex = current.lineIndex + plan.lineCount;
+				const continuation = createContinuationZone(
+					current,
+					plan.overflow,
+					overflowLineCount,
+					continuationLineIndex
+				);
+				sheet = { ...sheet, zones: [...sheet.zones, continuation] };
+				await tick();
+				focusZoneEditor(continuation.id);
+				return;
+			}
+
+			onzoneoverflow?.({
+				zoneId,
+				continuation: createContinuationZone(current, plan.overflow, overflowLineCount)
+			});
 			return;
 		}
-
-		onzoneoverflow?.({
-			zoneId,
-			continuation: createContinuationZone(zone, split.overflow, overflowLineCount)
-		});
 	}
 
 	function persistZoneContent(zoneId: string, editor: HTMLElement) {
