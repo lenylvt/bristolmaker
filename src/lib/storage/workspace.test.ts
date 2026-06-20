@@ -69,12 +69,23 @@ describe('workspace storage', () => {
 		const sheets = createDefaultWorkspace();
 		saveWorkspaceToStorage(sheets, storage);
 
-		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toContain('"version":1');
+		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toContain(`"version":${WORKSPACE_VERSION}`);
 		expect(loadWorkspaceFromStorage(storage)).toEqual(sheets);
 	});
 
 	it('returns null for invalid workspace json', () => {
 		expect(parseWorkspace('not-json')).toBeNull();
+	});
+
+	it('migrates v1 workspaces to a single compact continuous sheet', () => {
+		const sheet = createEmptySheet();
+		const zone = createWriteZone({ lineIndex: 36, leftCm: 0, widthCm: 5 });
+		const migrated = parseWorkspace(
+			JSON.stringify({ version: 1, sheets: [{ ...sheet, zones: [zone], blocks: [] }] })
+		);
+
+		expect(migrated).toHaveLength(1);
+		expect(migrated?.[0].zones[0].lineIndex).toBe(42);
 	});
 
 	it('returns null for unsupported workspace version', () => {

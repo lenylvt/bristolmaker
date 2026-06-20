@@ -63,6 +63,10 @@ function round(value: number): number {
 }
 
 export function getWritableLines(layout: BristolLayout): BristolLine[] {
+	if ('pageCount' in layout && 'totalHeightCm' in layout) {
+		return layout.lines;
+	}
+
 	return layout.lines.filter((line) => line.positionCm >= layout.specs.firstLineCm - 1e-9);
 }
 
@@ -79,6 +83,17 @@ export function getWritableArea(layout: BristolLayout): {
 	horizontalPaddingCm: number;
 } {
 	const { lineSpacingCm } = layout.specs;
+
+	if ('pageCount' in layout && 'totalHeightCm' in layout) {
+		return {
+			topCm: 0,
+			heightCm: (layout as { totalHeightCm: number }).totalHeightCm,
+			lineHeightCm: lineSpacingCm,
+			paddingTopCm: 0,
+			horizontalPaddingCm: 0.3
+		};
+	}
+
 	const { headerLineCm } = layout;
 	const writableLines = getWritableLines(layout);
 	const firstWritableLine = writableLines[0];

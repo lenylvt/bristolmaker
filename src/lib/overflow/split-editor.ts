@@ -66,10 +66,11 @@ export function mergeZoneContent(zone: WriteZone, content: string, lineCount: nu
 export function createContinuationZone(
 	source: WriteZone,
 	overflowContent: string,
-	overflowLineCount: number
+	overflowLineCount: number,
+	startLineIndex = 1
 ): WriteZone {
 	return createWriteZone({
-		lineIndex: 1,
+		lineIndex: startLineIndex,
 		leftCm: source.leftCm,
 		widthCm: source.widthCm,
 		lineCount: Math.max(1, overflowLineCount),

@@ -3,7 +3,7 @@ import {
 	isValidWorkspaceFile,
 	readWorkspaceFile
 } from './workspace-io.js';
-import { createDefaultWorkspace, serializeWorkspace } from './workspace.js';
+import { createDefaultWorkspace, serializeWorkspace, WORKSPACE_VERSION } from './workspace.js';
 
 describe('workspace-io', () => {
 	it('roundtrips workspace through file text', async () => {
@@ -30,7 +30,7 @@ describe('workspace-io', () => {
 	it('serializes export payload as valid workspace json', () => {
 		const sheets = createDefaultWorkspace();
 		const raw = serializeWorkspace(sheets);
-		expect(raw).toContain('"version":1');
+		expect(raw).toContain(`"version":${WORKSPACE_VERSION}`);
 		expect(raw).toContain('"sheets"');
 	});
 });

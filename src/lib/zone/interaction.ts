@@ -74,12 +74,14 @@ export function resizeZone(
 	handle: ResizeHandle,
 	delta: SheetPointCm,
 	layout: BristolLayout,
-	sheetWidthCm: number
+	sheetWidthCm: number,
+	minLineCount = MIN_ZONE_LINES
 ): ZoneGeometry {
 	let { lineIndex, leftCm, widthCm, lineCount } = zone;
 	const spacing = layout.specs.lineSpacingCm;
 	const deltaLines = Math.round(delta.yCm / spacing);
 	const writableCount = getWritableLines(layout).length;
+	const contentMinLines = Math.max(MIN_ZONE_LINES, minLineCount);
 
 	if (handle.includes('e')) {
 		widthCm = clampWidthCm(leftCm, widthCm + delta.xCm, sheetWidthCm);
@@ -96,18 +98,25 @@ export function resizeZone(
 
 	if (handle === 's' || handle === 'se' || handle === 'sw') {
 		const maxLines = getMaxLinesForZone(lineIndex, layout);
-		lineCount = clamp(lineCount + deltaLines, MIN_ZONE_LINES, maxLines || MIN_ZONE_LINES);
+		lineCount = clamp(lineCount + deltaLines, contentMinLines, maxLines || contentMinLines);
 	}
 
 	if (handle === 'n' || handle === 'ne' || handle === 'nw') {
-		const nextLineIndex = clamp(lineIndex + deltaLines, 1, writableCount);
 		const bottomLine = lineIndex + lineCount - 1;
-		const nextLineCount = bottomLine - nextLineIndex + 1;
-		if (nextLineCount >= MIN_ZONE_LINES) {
+		const nextLineIndex = clamp(lineIndex + deltaLines, 1, writableCount);
+		let nextLineCount = bottomLine - nextLineIndex + 1;
+
+		if (nextLineCount < contentMinLines) {
+			nextLineCount = contentMinLines;
+			lineIndex = Math.max(1, bottomLine - contentMinLines + 1);
+			lineCount = nextLineCount;
+		} else if (nextLineCount >= MIN_ZONE_LINES) {
 			lineIndex = nextLineIndex;
 			lineCount = nextLineCount;
 		}
 	}
+
+	lineCount = Math.max(lineCount, contentMinLines);
 
 	return {
 		lineIndex,

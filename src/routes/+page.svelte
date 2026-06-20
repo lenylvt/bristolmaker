@@ -2,9 +2,15 @@
 	import BristolSheet from '$lib/components/bristol/BristolSheet.svelte';
 	import WorkspaceMenu from '$lib/components/workspace/WorkspaceMenu.svelte';
 	import SelectionFormatPill from '$lib/components/format/SelectionFormatPill.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { MAX_SHEETS } from '$lib/sheet/count.js';
-	import { addSheet, removeSheet } from '$lib/sheet/workbook.js';
+	import {
+		buildContinuousLayout,
+		computeContinuousPageCount,
+		mergeSheetsToContinuous,
+		migrateZonesToCompactLayout,
+		PRINT_EXTRA_SIDE_MARGIN_CM
+	} from '$lib/bristol/continuous.js';
+	import { buildBristolLayout } from '$lib/bristol/layout.js';
+	import { computePrintPageCount, mapSheetForPrint, slicePrintSheetPage } from '$lib/bristol/print-map.js';
 	import { createDebouncedWorkspaceSave } from '$lib/storage/debounced-workspace-save.js';
 	import {
 		exportWorkspaceFile,
@@ -13,25 +19,37 @@
 	} from '$lib/storage/workspace-io.js';
 	import {
 		createDefaultWorkspace,
-		loadWorkspaceFromStorage
+		loadWorkspaceFromStorage,
+		normalizeSheet
 	} from '$lib/storage/workspace.js';
-	import { setActiveSheetKey } from '$lib/state/active-sheet.js';
 	import { zoomFromWheel } from '$lib/viewport/pan-zoom.js';
-	import { type SheetData, type WriteZone } from '$lib/zone/index.js';
-	import { Plus } from '@lucide/svelte';
-	import { onMount, tick } from 'svelte';
+	import { type SheetData } from '$lib/zone/index.js';
+	import { onMount } from 'svelte';
 
-	let sheets = $state<SheetData[]>(createDefaultWorkspace());
+	function normalizeContinuousWorkspace(sheets: SheetData[]): SheetData {
+		if (sheets.length === 0) return createDefaultWorkspace()[0];
+		if (sheets.length === 1) return normalizeSheet(sheets[0]);
+		return normalizeSheet(mergeSheetsToContinuous(sheets.map(normalizeSheet)));
+	}
+
+	let sheet = $state<SheetData>(normalizeContinuousWorkspace(createDefaultWorkspace()));
 	let scale = $state(1);
 	let activeEditor = $state<HTMLElement | null>(null);
 	let storageReady = $state(false);
 	let importInputEl = $state<HTMLInputElement | null>(null);
 
+	const baseLayout = buildBristolLayout();
+	const editorPageCount = $derived(computeContinuousPageCount(sheet.zones));
+	const printSheet = $derived(mapSheetForPrint(sheet, buildContinuousLayout(editorPageCount)));
+	const printPageCount = $derived(computePrintPageCount(printSheet));
+	const printPageHeightCm = baseLayout.specs.heightCm;
+	const printPageWidthCm = baseLayout.specs.widthCm;
+
 	const debouncedSave = createDebouncedWorkspaceSave(300);
 
 	onMount(() => {
 		const stored = loadWorkspaceFromStorage();
-		if (stored) sheets = stored;
+		if (stored) sheet = normalizeContinuousWorkspace(stored);
 		storageReady = true;
 
 		return () => {
@@ -41,49 +59,11 @@
 
 	$effect(() => {
 		if (!storageReady) return;
-		debouncedSave.schedule(sheets);
+		debouncedSave.schedule([sheet]);
 	});
-
-	const canAddSheet = $derived(sheets.length < MAX_SHEETS);
 
 	function handleEditorFocus(editor: HTMLElement) {
 		activeEditor = editor;
-	}
-
-	async function handleZoneOverflow(sheetId: string, continuation: WriteZone) {
-		const sheetIndex = sheets.findIndex((sheet) => sheet.id === sheetId);
-		if (sheetIndex === -1) return;
-
-		let nextSheets = [...sheets];
-
-		if (sheetIndex + 1 >= nextSheets.length) {
-			if (nextSheets.length >= MAX_SHEETS) return;
-			nextSheets = addSheet(nextSheets);
-		}
-
-		const targetSheet = nextSheets[sheetIndex + 1];
-		nextSheets[sheetIndex + 1] = {
-			...targetSheet,
-			zones: [...targetSheet.zones, continuation]
-		};
-		sheets = nextSheets;
-
-		await tick();
-		const nextSheet = nextSheets[sheetIndex + 1];
-		const nextEditor = document.querySelector<HTMLElement>(
-			`#sheet-${nextSheet.id} [data-zone-id="${continuation.id}"] .zone-editor`
-		);
-		nextEditor?.focus();
-	}
-
-	function handleAddSheet() {
-		sheets = addSheet(sheets);
-	}
-
-	function handleRemoveSheet(sheetId: string) {
-		const index = sheets.findIndex((sheet) => sheet.id === sheetId);
-		if (index === -1) return;
-		sheets = removeSheet(sheets, index);
 	}
 
 	function printSheets() {
@@ -91,14 +71,14 @@
 	}
 
 	function createNewWorkspace() {
-		sheets = createDefaultWorkspace();
+		sheet = normalizeContinuousWorkspace(createDefaultWorkspace());
 		activeEditor = null;
-		debouncedSave.flush(sheets);
+		debouncedSave.flush([sheet]);
 	}
 
 	function exportWorkspace() {
-		debouncedSave.flush(sheets);
-		exportWorkspaceFile(sheets);
+		debouncedSave.flush([sheet]);
+		exportWorkspaceFile([sheet]);
 	}
 
 	function openImportPicker() {
@@ -114,9 +94,9 @@
 		const imported = await readWorkspaceFile(file);
 		if (!imported) return;
 
-		sheets = imported;
+		sheet = normalizeContinuousWorkspace(imported);
 		activeEditor = null;
-		debouncedSave.flush(sheets);
+		debouncedSave.flush([sheet]);
 	}
 
 	function handleWheel(event: WheelEvent) {
@@ -159,39 +139,15 @@
 		>
 			<div class="viewport-canvas" style:zoom={scale}>
 				<div class="workspace-inner">
-					<div class="sheets-stack">
-						{#each sheets as sheet, index (sheet.id)}
-							<div
-								class="sheet-slot"
-								id="sheet-{sheet.id}"
-								role="group"
-								aria-label="Feuille {index + 1}"
-								onpointerdown={() => setActiveSheetKey(sheet.id)}
-							>
-								<BristolSheet
-									bind:sheet={sheets[index]}
-									sheetKey={sheet.id}
-									viewportScale={scale}
-									deletable={index > 0}
-									ondelete={() => handleRemoveSheet(sheet.id)}
-									oneditorfocus={handleEditorFocus}
-									onzoneoverflow={({ continuation }) => handleZoneOverflow(sheet.id, continuation)}
-								/>
-							</div>
-						{/each}
+					<div class="sheet-slot" id="sheet-{sheet.id}" role="group" aria-label="Document Bristol">
+						<BristolSheet
+							bind:sheet
+							sheetKey={sheet.id}
+							viewportScale={scale}
+							continuous
+							oneditorfocus={handleEditorFocus}
+						/>
 					</div>
-
-					{#if canAddSheet}
-						<Button
-							variant="secondary"
-							size="sm"
-							class="rounded-full px-4 shadow-sm"
-							onclick={handleAddSheet}
-						>
-							<Plus />
-							Ajouter une feuille
-						</Button>
-					{/if}
 				</div>
 			</div>
 		</div>
@@ -199,9 +155,21 @@
 
 	<SelectionFormatPill editor={activeEditor} />
 
-	<div class="print-sheets" aria-hidden="true">
-		{#each sheets as sheet (sheet.id)}
-			<BristolSheet {sheet} editable={false} />
+	<div
+		class="print-sheets"
+		aria-hidden="true"
+		style:--print-content-width="{printPageWidthCm}cm"
+		style:--print-page-height="{printPageHeightCm}cm"
+		style:--print-side-margin="{PRINT_EXTRA_SIDE_MARGIN_CM}cm"
+	>
+		{#each Array(printPageCount) as _, pageIndex (pageIndex)}
+			<div class="print-page-clip">
+				<BristolSheet
+					sheet={slicePrintSheetPage(printSheet, pageIndex)}
+					editable={false}
+					class="print-clip-child"
+				/>
+			</div>
 		{/each}
 	</div>
 </div>
@@ -280,14 +248,6 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 1.5rem;
-	}
-
-	.sheets-stack {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2.5rem;
 	}
 
 	.sheet-slot {
@@ -297,6 +257,15 @@
 
 	.print-sheets {
 		display: none;
+	}
+
+	.print-page-clip {
+		width: var(--print-content-width);
+		height: var(--print-page-height);
+		overflow: hidden;
+		margin: 0 auto;
+		padding: 0 var(--print-side-margin);
+		box-sizing: content-box;
 	}
 
 	@media print {
@@ -317,6 +286,16 @@
 
 		.print-sheets {
 			display: block;
+		}
+
+		.print-page-clip {
+			page-break-after: always;
+			break-after: page;
+		}
+
+		.print-page-clip:last-child {
+			page-break-after: auto;
+			break-after: auto;
 		}
 	}
 
