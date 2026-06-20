@@ -12,6 +12,10 @@
 		tryAutoList
 	} from '$lib/editor/format/index.js';
 	import {
+		shouldEnterEditOnDoubleClick,
+		shouldPreventEditorPointerDefault
+	} from '$lib/components/bristol/WriteZone.interaction.js';
+	import {
 		getZoneHeightCm,
 		getZoneTopCm,
 		type ResizeHandle,
@@ -102,12 +106,15 @@
 		event.stopPropagation();
 		if (!selected) {
 			onselect?.(event);
-			event.preventDefault();
+			if (shouldPreventEditorPointerDefault(selected, event.detail)) {
+				event.preventDefault();
+			}
 		}
 	}
 
 	function handleZoneDoubleClick(event: MouseEvent) {
 		event.stopPropagation();
+		if (!shouldEnterEditOnDoubleClick(editing)) return;
 		oneditrequest?.();
 	}
 
