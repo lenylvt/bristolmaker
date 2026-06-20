@@ -1,0 +1,15 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "bristol",
+	"compatibility_date": "2026-06-20",
+	"assets": {
+		"directory": "./build",
+		"not_found_handling": "single-page-application"
+	},
+	"routes": [
+		{
+			"pattern": "bristol.lenylvt.cc",
+			"custom_domain": true
+		}
+	]
+}
