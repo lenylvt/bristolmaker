@@ -587,15 +587,18 @@
 		const zone = sheet.zones.find((item) => item.id === zoneId);
 		if (!zone) return;
 
+		const content = sanitizeEditorHtml(editor.innerHTML);
 		const maxLines = getZoneMaxLines(zone, layout);
-		const measuredLines = measureEditorLineCount(editor, zone.lineCount);
-		const minLines = measureZoneMinLineCount(zone, editor);
-		const lineCount = Math.min(Math.max(measuredLines, minLines, MIN_ZONE_LINES), maxLines);
 
-		updateZone(zoneId, {
-			content: sanitizeEditorHtml(editor.innerHTML),
-			lineCount
-		});
+		if (isZoneEmpty(content)) {
+			updateZone(zoneId, { content, lineCount: zone.lineCount });
+			return;
+		}
+
+		const contentLines = measureZoneMinLineCount({ ...zone, content }, editor);
+		const lineCount = Math.min(Math.max(contentLines, MIN_ZONE_LINES), maxLines);
+
+		updateZone(zoneId, { content, lineCount });
 	}
 
 	function flushZoneEditor(zoneId: string) {

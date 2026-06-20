@@ -1,4 +1,5 @@
 import { htmlToPlainLines } from '$lib/editor/html.js';
+import { sanitizeEditorHtml } from '$lib/editor/sanitize.js';
 import { MIN_ZONE_LINES, type WriteZone } from './types.js';
 
 export function isZoneEmpty(content: string): boolean {
@@ -7,6 +8,34 @@ export function isZoneEmpty(content: string): boolean {
 		.replace(/\u200b/g, '')
 		.trim();
 	return text.length === 0;
+}
+
+function isEditorContentEmpty(editor: HTMLElement): boolean {
+	const raw = editor.innerText.replace(/\u200b/g, '');
+	if (raw.trim()) return false;
+	return isZoneEmpty(sanitizeEditorHtml(editor.innerHTML));
+}
+
+function getEditorLineHeightPx(editor: HTMLElement): number {
+	if (typeof getComputedStyle === 'function') {
+		const parsed = parseFloat(getComputedStyle(editor).lineHeight);
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	}
+	return editor.clientHeight / Math.max(MIN_ZONE_LINES, 1);
+}
+
+/** Mesure les lignes réellement occupées par le contenu (sans tenir compte de la taille actuelle de la zone). */
+export function measureContentLineCount(editor: HTMLElement): number {
+	const raw = editor.innerText.replace(/\u200b/g, '');
+	if (!raw.trim()) return MIN_ZONE_LINES;
+
+	const explicitLines = Math.max(1, raw.split('\n').length);
+	if (raw.includes('\n')) return explicitLines;
+
+	const lineHeightPx = getEditorLineHeightPx(editor);
+	if (!Number.isFinite(lineHeightPx) || lineHeightPx <= 0) return MIN_ZONE_LINES;
+
+	return Math.max(MIN_ZONE_LINES, Math.ceil(editor.scrollHeight / lineHeightPx));
 }
 
 export function measureEditorLineCount(editor: HTMLElement, currentLineCount: number): number {
@@ -38,17 +67,14 @@ export function measureEditorLineCount(editor: HTMLElement, currentLineCount: nu
 
 /** Nombre minimal de lignes requis par le contenu actuel d'une zone. */
 export function measureZoneMinLineCount(zone: WriteZone, editor?: HTMLElement | null): number {
-	if (editor) {
-		const raw = editor.innerText.replace(/\u200b/g, '');
-		if (raw.trim()) {
-			return measureEditorLineCount(editor, zone.lineCount);
-		}
+	if (editor && !isEditorContentEmpty(editor)) {
+		return measureContentLineCount(editor);
 	}
 
-	if (isZoneEmpty(zone.content)) {
-		return MIN_ZONE_LINES;
+	if (!isZoneEmpty(zone.content)) {
+		const text = htmlToPlainLines(zone.content).replace(/\u200b/g, '');
+		return Math.max(MIN_ZONE_LINES, Math.max(1, text.split('\n').length));
 	}
 
-	const text = htmlToPlainLines(zone.content).replace(/\u200b/g, '');
-	return Math.max(MIN_ZONE_LINES, Math.max(1, text.split('\n').length));
+	return MIN_ZONE_LINES;
 }

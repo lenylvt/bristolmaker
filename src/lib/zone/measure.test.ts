@@ -9,6 +9,18 @@ describe('measureZoneMinLineCount', () => {
 		expect(measureZoneMinLineCount(zone)).toBe(1);
 	});
 
+	it('returns one line for an empty editor even when the zone is tall', () => {
+		const zone = createWriteZone({ lineIndex: 1, leftCm: 0, widthCm: 5, lineCount: 8 });
+		const editor = {
+			innerText: '',
+			innerHTML: '<div><br></div>',
+			clientHeight: 80,
+			scrollHeight: 120
+		} as unknown as HTMLElement;
+
+		expect(measureZoneMinLineCount(zone, editor)).toBe(1);
+	});
+
 	it('counts explicit newlines in stored content', () => {
 		const zone = createWriteZone({
 			lineIndex: 1,
@@ -41,6 +53,13 @@ describe('resizeZone content minimum', () => {
 
 		const resized = resizeZone(zone, 's', { xCm: 0, yCm: -2 }, layout, 14.8, 5);
 		expect(resized.lineCount).toBe(5);
+	});
+
+	it('can shrink empty zones below their current height', () => {
+		const zone = createWriteZone({ lineIndex: 3, leftCm: 2, widthCm: 4, lineCount: 5 });
+
+		const resized = resizeZone(zone, 's', { xCm: 0, yCm: -0.5 }, layout, 14.8, 1);
+		expect(resized.lineCount).toBe(4);
 	});
 
 	it('cannot shrink below the content line minimum on north handle', () => {
