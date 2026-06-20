@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { createDebouncedWorkspaceSave } from './debounced-workspace-save.js';
-import { WORKSPACE_STORAGE_KEY } from './workspace.js';
+import { WORKSPACE_STORAGE_KEY, WORKSPACE_VERSION } from './workspace.js';
 import { createDefaultWorkspace } from './workspace.js';
 
 class MemoryStorage implements Storage {
@@ -50,7 +50,7 @@ describe('debounced workspace save', () => {
 		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toBeNull();
 
 		vi.advanceTimersByTime(300);
-		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toContain('"version":1');
+		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toContain(`"version":${WORKSPACE_VERSION}`);
 	});
 
 	it('flushes immediately', () => {
@@ -59,6 +59,6 @@ describe('debounced workspace save', () => {
 		const sheets = createDefaultWorkspace();
 
 		saver.flush(sheets);
-		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toContain('"version":1');
+		expect(storage.getItem(WORKSPACE_STORAGE_KEY)).toContain(`"version":${WORKSPACE_VERSION}`);
 	});
 });

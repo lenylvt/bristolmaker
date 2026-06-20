@@ -3,11 +3,14 @@
 	import WorkspaceMenu from '$lib/components/workspace/WorkspaceMenu.svelte';
 	import SelectionFormatPill from '$lib/components/format/SelectionFormatPill.svelte';
 	import {
+		buildContinuousLayout,
 		computeContinuousPageCount,
 		mergeSheetsToContinuous,
+		migrateZonesToCompactLayout,
 		PRINT_EXTRA_SIDE_MARGIN_CM
 	} from '$lib/bristol/continuous.js';
 	import { buildBristolLayout } from '$lib/bristol/layout.js';
+	import { computePrintPageCount, mapSheetForPrint, slicePrintSheetPage } from '$lib/bristol/print-map.js';
 	import { createDebouncedWorkspaceSave } from '$lib/storage/debounced-workspace-save.js';
 	import {
 		exportWorkspaceFile,
@@ -25,8 +28,8 @@
 
 	function normalizeContinuousWorkspace(sheets: SheetData[]): SheetData {
 		if (sheets.length === 0) return createDefaultWorkspace()[0];
-		const merged = mergeSheetsToContinuous(sheets.map(normalizeSheet));
-		return normalizeSheet(merged);
+		if (sheets.length === 1) return normalizeSheet(sheets[0]);
+		return normalizeSheet(mergeSheetsToContinuous(sheets.map(normalizeSheet)));
 	}
 
 	let sheet = $state<SheetData>(normalizeContinuousWorkspace(createDefaultWorkspace()));
@@ -36,10 +39,11 @@
 	let importInputEl = $state<HTMLInputElement | null>(null);
 
 	const baseLayout = buildBristolLayout();
-	const printPageCount = $derived(computeContinuousPageCount(sheet.zones, baseLayout));
+	const editorPageCount = $derived(computeContinuousPageCount(sheet.zones));
+	const printSheet = $derived(mapSheetForPrint(sheet, buildContinuousLayout(editorPageCount)));
+	const printPageCount = $derived(computePrintPageCount(printSheet));
 	const printPageHeightCm = baseLayout.specs.heightCm;
 	const printPageWidthCm = baseLayout.specs.widthCm;
-	const printContentWidthCm = printPageWidthCm - PRINT_EXTRA_SIDE_MARGIN_CM * 2;
 
 	const debouncedSave = createDebouncedWorkspaceSave(300);
 
@@ -154,24 +158,17 @@
 	<div
 		class="print-sheets"
 		aria-hidden="true"
-		style:--print-content-width="{printContentWidthCm}cm"
+		style:--print-content-width="{printPageWidthCm}cm"
 		style:--print-page-height="{printPageHeightCm}cm"
+		style:--print-side-margin="{PRINT_EXTRA_SIDE_MARGIN_CM}cm"
 	>
 		{#each Array(printPageCount) as _, pageIndex (pageIndex)}
 			<div class="print-page-clip">
-				<div
-					class="print-page-offset"
-					style:transform="translateY(-{pageIndex * printPageHeightCm}cm)"
-					style:width="{printPageWidthCm}cm"
-					style:margin-left="-{PRINT_EXTRA_SIDE_MARGIN_CM}cm"
-				>
-					<BristolSheet
-						{sheet}
-						editable={false}
-						continuous
-						class="print-clip-child"
-					/>
-				</div>
+				<BristolSheet
+					sheet={slicePrintSheetPage(printSheet, pageIndex)}
+					editable={false}
+					class="print-clip-child"
+				/>
 			</div>
 		{/each}
 	</div>
@@ -267,10 +264,8 @@
 		height: var(--print-page-height);
 		overflow: hidden;
 		margin: 0 auto;
-	}
-
-	.print-page-offset {
-		position: relative;
+		padding: 0 var(--print-side-margin);
+		box-sizing: content-box;
 	}
 
 	@media print {

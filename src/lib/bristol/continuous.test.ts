@@ -3,17 +3,23 @@ import { createWriteZone } from '$lib/zone/factory.js';
 import {
 	buildContinuousLayout,
 	computeContinuousPageCount,
+	CONTINUOUS_LINES_PER_PAGE,
 	getPageBreakPositions,
 	getLinesPerPage,
 	GROW_PAGE_THRESHOLD,
-	mergeSheetsToContinuous
+	migrateContinuousLineIndex,
+	mergeSheetsToContinuous,
+	PRINT_LINES_PER_PAGE
 } from '$lib/bristol/continuous.js';
-import { buildBristolLayout } from '$lib/bristol/layout.js';
 import { createEmptySheet } from '$lib/zone/index.js';
 
 describe('continuous layout', () => {
-	const baseLayout = buildBristolLayout();
-	const linesPerPage = getLinesPerPage(baseLayout);
+	const linesPerPage = getLinesPerPage();
+
+	it('uses full page height in the editor', () => {
+		expect(linesPerPage).toBe(CONTINUOUS_LINES_PER_PAGE);
+		expect(linesPerPage).toBe(42);
+	});
 
 	it('starts with one page when empty', () => {
 		expect(computeContinuousPageCount([])).toBe(1);
@@ -32,16 +38,24 @@ describe('continuous layout', () => {
 		expect(computeContinuousPageCount(zones)).toBe(2);
 	});
 
-	it('extends ruled lines across virtual pages', () => {
+	it('extends ruled lines from the top of each page', () => {
 		const layout = buildContinuousLayout(2);
 		expect(layout.pageCount).toBe(2);
 		expect(layout.totalHeightCm).toBe(42);
+		expect(layout.headerLineCm).toBe(0);
 		expect(layout.lines).toHaveLength(linesPerPage * 2);
-		expect(layout.lines[linesPerPage]?.positionCm).toBe(21 + 2);
+		expect(layout.lines[0]?.positionCm).toBe(0.5);
+		expect(layout.lines[linesPerPage]?.positionCm).toBe(21.5);
 	});
 
 	it('returns page break positions between pages', () => {
 		expect(getPageBreakPositions(3, 21)).toEqual([21, 42]);
+	});
+
+	it('migrates legacy 36-line indexes to compact layout', () => {
+		expect(migrateContinuousLineIndex(1)).toBe(1);
+		expect(migrateContinuousLineIndex(36)).toBe(42);
+		expect(migrateContinuousLineIndex(37)).toBe(43);
 	});
 
 	it('merges multi-sheet workspaces into one continuous sheet', () => {
@@ -52,6 +66,6 @@ describe('continuous layout', () => {
 
 		const merged = mergeSheetsToContinuous([sheet1, sheet2]);
 		expect(merged.zones).toHaveLength(2);
-		expect(merged.zones[1].lineIndex).toBe(linesPerPage + 2);
+		expect(merged.zones[1].lineIndex).toBe(migrateContinuousLineIndex(PRINT_LINES_PER_PAGE + 2));
 	});
 });

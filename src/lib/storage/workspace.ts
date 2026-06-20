@@ -1,7 +1,8 @@
 import { createEmptySheet, type SheetData } from '$lib/zone/index.js';
+import { mergeSheetsToContinuous, migrateZonesToCompactLayout } from '$lib/bristol/continuous.js';
 
 export const WORKSPACE_STORAGE_KEY = 'bristolmaker-workspace';
-export const WORKSPACE_VERSION = 1;
+export const WORKSPACE_VERSION = 2;
 
 export type WorkspaceSnapshot = {
 	version: number;
@@ -36,13 +37,27 @@ export function serializeWorkspace(sheets: SheetData[]): string {
 export function parseWorkspace(raw: string): SheetData[] | null {
 	try {
 		const parsed = JSON.parse(raw) as WorkspaceSnapshot;
-		if (!parsed || parsed.version !== WORKSPACE_VERSION || !Array.isArray(parsed.sheets)) {
+		if (!parsed || !Array.isArray(parsed.sheets)) {
 			return null;
 		}
+
+		if (parsed.version === 1) {
+			return migrateWorkspaceV1(parsed.sheets);
+		}
+
+		if (parsed.version !== WORKSPACE_VERSION) {
+			return null;
+		}
+
 		return parsed.sheets.map(normalizeSheet);
 	} catch {
 		return null;
 	}
+}
+
+function migrateWorkspaceV1(sheets: SheetData[]): SheetData[] {
+	const merged = mergeSheetsToContinuous(sheets.map(normalizeSheet));
+	return [normalizeSheet({ ...merged, zones: migrateZonesToCompactLayout(merged.zones) })];
 }
 
 export function loadWorkspaceFromStorage(storage: Storage = localStorage): SheetData[] | null {

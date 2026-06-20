@@ -126,9 +126,7 @@
 	let interaction = $state<Interaction | null>(null);
 
 	const baseLayout = $derived(buildBristolLayout());
-	const pageCount = $derived(
-		continuous ? computeContinuousPageCount(sheet.zones, baseLayout) : 1
-	);
+	const pageCount = $derived(continuous ? computeContinuousPageCount(sheet.zones) : 1);
 	const layout = $derived(
 		continuous ? buildContinuousLayout(pageCount) : baseLayout
 	) as ContinuousLayout | ReturnType<typeof buildBristolLayout>;
@@ -140,9 +138,7 @@
 	const pageBreaks = $derived(
 		continuous ? getPageBreakPositions(pageCount, specs.heightCm) : []
 	);
-	const writableHeightCm = $derived(
-		continuous ? sheetHeightCm - layout.headerLineCm : area.heightCm
-	);
+	const writableHeightCm = $derived(area.heightCm);
 	const pillMode = $derived(getPillMode(selection));
 
 	function updateZone(zoneId: string, patch: Partial<WriteZone>) {
