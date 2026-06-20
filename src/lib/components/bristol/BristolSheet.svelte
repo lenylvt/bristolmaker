@@ -28,6 +28,7 @@
 		getZoneTopCm,
 		isZoneEmpty,
 		measureEditorLineCount,
+		measureZoneMinLineCount,
 		MIN_ZONE_LINES,
 		moveZoneByArrow,
 		moveZoneWithGrab,
@@ -497,14 +498,44 @@
 			xCm: ((event.clientX - current.startX) / rect.width) * specs.widthCm,
 			yCm: ((event.clientY - current.startY) / rect.height) * sheetHeightCm
 		};
-		const next = resizeZone(current.origin, current.handle, delta, layout, specs.widthCm);
+		const zone = sheet.zones.find((item) => item.id === current.zoneId);
+		const editor = sheetEl?.querySelector<HTMLElement>(
+			`[data-zone-id="${current.zoneId}"] .zone-editor`
+		);
+		const minLineCount = zone ? measureZoneMinLineCount(zone, editor) : MIN_ZONE_LINES;
+		const next = resizeZone(
+			current.origin,
+			current.handle,
+			delta,
+			layout,
+			specs.widthCm,
+			minLineCount
+		);
 		updateZone(current.zoneId, next);
 	}
 
+	function clampZoneToContentMinLines(zoneId: string) {
+		const zone = sheet.zones.find((item) => item.id === zoneId);
+		if (!zone) return;
+
+		const editor = sheetEl?.querySelector<HTMLElement>(`[data-zone-id="${zoneId}"] .zone-editor`);
+		const minLineCount = measureZoneMinLineCount(zone, editor);
+		if (zone.lineCount >= minLineCount) return;
+
+		const maxLines = getZoneMaxLines(zone, layout);
+		updateZone(zoneId, { lineCount: Math.min(minLineCount, maxLines) });
+	}
+
 	function handlePointerUp() {
+		const current = interaction;
 		interaction = null;
 		window.removeEventListener('pointermove', handlePointerMove);
 		window.removeEventListener('pointerup', handlePointerUp);
+
+		if (current?.type === 'resize') {
+			flushZoneEditor(current.zoneId);
+			clampZoneToContentMinLines(current.zoneId);
+		}
 	}
 
 	async function handleZoneInput(zoneId: string, editor: HTMLElement) {
@@ -558,7 +589,8 @@
 
 		const maxLines = getZoneMaxLines(zone, layout);
 		const measuredLines = measureEditorLineCount(editor, zone.lineCount);
-		const lineCount = Math.min(Math.max(measuredLines, MIN_ZONE_LINES), maxLines);
+		const minLines = measureZoneMinLineCount(zone, editor);
+		const lineCount = Math.min(Math.max(measuredLines, minLines, MIN_ZONE_LINES), maxLines);
 
 		updateZone(zoneId, {
 			content: sanitizeEditorHtml(editor.innerHTML),

@@ -1,5 +1,5 @@
 import { htmlToPlainLines } from '$lib/editor/html.js';
-import { MIN_ZONE_LINES } from './types.js';
+import { MIN_ZONE_LINES, type WriteZone } from './types.js';
 
 export function isZoneEmpty(content: string): boolean {
 	if (!content) return true;
@@ -34,4 +34,21 @@ export function measureEditorLineCount(editor: HTMLElement, currentLineCount: nu
 	}
 
 	return measured;
+}
+
+/** Nombre minimal de lignes requis par le contenu actuel d'une zone. */
+export function measureZoneMinLineCount(zone: WriteZone, editor?: HTMLElement | null): number {
+	if (editor) {
+		const raw = editor.innerText.replace(/\u200b/g, '');
+		if (raw.trim()) {
+			return measureEditorLineCount(editor, zone.lineCount);
+		}
+	}
+
+	if (isZoneEmpty(zone.content)) {
+		return MIN_ZONE_LINES;
+	}
+
+	const text = htmlToPlainLines(zone.content).replace(/\u200b/g, '');
+	return Math.max(MIN_ZONE_LINES, Math.max(1, text.split('\n').length));
 }
