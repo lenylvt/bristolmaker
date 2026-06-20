@@ -3,6 +3,13 @@
 	import ZoneActionPill from '$lib/components/bristol/ZoneActionPill.svelte';
 	import { buildBristolLayout, getWritableArea, TEXT_OFFSET } from '$lib/bristol/layout.js';
 	import {
+		buildContinuousLayout,
+		computeContinuousPageCount,
+		getPageBreakPositions,
+		PRINT_EXTRA_SIDE_MARGIN_CM,
+		type ContinuousLayout
+	} from '$lib/bristol/continuous.js';
+	import {
 		createBlockFromZoneIds,
 		duplicateBlock,
 		moveBlockZones,
@@ -73,6 +80,7 @@
 		sheetKey?: string;
 		viewportScale?: number;
 		editable?: boolean;
+		continuous?: boolean;
 		deletable?: boolean;
 		class?: string;
 		onzoneoverflow?: (payload: OverflowPayload) => void;
@@ -85,6 +93,7 @@
 		sheetKey = 'sheet-0',
 		viewportScale = 1,
 		editable = true,
+		continuous = false,
 		deletable = false,
 		class: className = '',
 		onzoneoverflow,
@@ -116,9 +125,24 @@
 
 	let interaction = $state<Interaction | null>(null);
 
-	const layout = $derived(buildBristolLayout());
+	const baseLayout = $derived(buildBristolLayout());
+	const pageCount = $derived(
+		continuous ? computeContinuousPageCount(sheet.zones, baseLayout) : 1
+	);
+	const layout = $derived(
+		continuous ? buildContinuousLayout(pageCount) : baseLayout
+	) as ContinuousLayout | ReturnType<typeof buildBristolLayout>;
 	const area = $derived(getWritableArea(layout));
 	const { specs } = $derived(layout);
+	const sheetHeightCm = $derived(
+		continuous && 'totalHeightCm' in layout ? layout.totalHeightCm : specs.heightCm
+	);
+	const pageBreaks = $derived(
+		continuous ? getPageBreakPositions(pageCount, specs.heightCm) : []
+	);
+	const writableHeightCm = $derived(
+		continuous ? sheetHeightCm - layout.headerLineCm : area.heightCm
+	);
 	const pillMode = $derived(getPillMode(selection));
 
 	function updateZone(zoneId: string, patch: Partial<WriteZone>) {
@@ -329,7 +353,7 @@
 			event.clientY,
 			rect,
 			specs.widthCm,
-			specs.heightCm
+			sheetHeightCm
 		);
 		const zone = createZoneAtPoint(point, layout, specs.widthCm);
 		sheet = { ...sheet, zones: [...sheet.zones, zone] };
@@ -383,7 +407,7 @@
 			event.clientY,
 			rect,
 			specs.widthCm,
-			specs.heightCm
+			sheetHeightCm
 		);
 		const grabOffset = {
 			xCm: pointer.xCm - zone.leftCm,
@@ -449,7 +473,7 @@
 				event.clientY,
 				rect,
 				specs.widthCm,
-				specs.heightCm
+				sheetHeightCm
 			);
 			const next = moveZoneWithGrab(
 				current.origin,
@@ -475,7 +499,7 @@
 
 		const delta = {
 			xCm: ((event.clientX - current.startX) / rect.width) * specs.widthCm,
-			yCm: ((event.clientY - current.startY) / rect.height) * specs.heightCm
+			yCm: ((event.clientY - current.startY) / rect.height) * sheetHeightCm
 		};
 		const next = resizeZone(current.origin, current.handle, delta, layout, specs.widthCm);
 		updateZone(current.zoneId, next);
@@ -511,6 +535,21 @@
 		if (!split.overflow) return;
 
 		const overflowLineCount = Math.max(1, split.overflow.split('\n').length);
+
+		if (continuous) {
+			const continuationLineIndex = zone.lineIndex + split.lineCount;
+			const continuation = createContinuationZone(
+				zone,
+				split.overflow,
+				overflowLineCount,
+				continuationLineIndex
+			);
+			sheet = { ...sheet, zones: [...sheet.zones, continuation] };
+			await tick();
+			focusZoneEditor(continuation.id);
+			return;
+		}
+
 		onzoneoverflow?.({
 			zoneId,
 			continuation: createContinuationZone(zone, split.overflow, overflowLineCount)
@@ -564,17 +603,28 @@
 	});
 </script>
 
-<div
-	bind:this={sheetEl}
-	class="bristol-sheet group/sheet relative bg-white text-black shadow-md {className}"
-	role="application"
-	aria-label="Feuille Bristol"
-	style:width="{specs.widthCm}cm"
-	style:height="{specs.heightCm}cm"
-	style:--text-offset={TEXT_OFFSET}
-	ondblclick={handleSheetDoubleClick}
-	onpointerdown={handleSheetPointerDown}
->
+<div class="sheet-outer" class:continuous>
+	{#if continuous && editable}
+		<div class="page-labels no-print" aria-hidden="true">
+			{#each Array(pageCount) as _, pageIndex (pageIndex)}
+				<span class="page-label" style:top="{pageIndex * specs.heightCm}cm">
+					Page {pageIndex + 1}
+				</span>
+			{/each}
+		</div>
+	{/if}
+
+	<div
+		bind:this={sheetEl}
+		class="bristol-sheet group/sheet relative bg-white text-black shadow-md {className}"
+		role="application"
+		aria-label="Feuille Bristol"
+		style:width="{specs.widthCm}cm"
+		style:height="{sheetHeightCm}cm"
+		style:--text-offset={TEXT_OFFSET}
+		ondblclick={handleSheetDoubleClick}
+		onpointerdown={handleSheetPointerDown}
+	>
 	{#if deletable && ondelete}
 		<div class="delete-corner no-print">
 			<button
@@ -603,16 +653,18 @@
 	{/if}
 
 	<div class="sheet-preview-layer" aria-hidden="true">
-		<div
-			class="header-shield pointer-events-none absolute right-0 left-0 z-0"
-			style:top="0"
-			style:height="calc({layout.headerLineCm}cm - 1px)"
-		></div>
+		{#if !continuous}
+			<div
+				class="header-shield pointer-events-none absolute right-0 left-0 z-0"
+				style:top="0"
+				style:height="calc({layout.headerLineCm}cm - 1px)"
+			></div>
 
-		<div
-			class="absolute right-0 left-0 border-t border-neutral-400"
-			style:top="{layout.headerLineCm}cm"
-		></div>
+			<div
+				class="absolute right-0 left-0 border-t border-neutral-400"
+				style:top="{layout.headerLineCm}cm"
+			></div>
+		{/if}
 
 		{#each layout.lines as line (line.index)}
 			<div
@@ -621,28 +673,34 @@
 			></div>
 		{/each}
 
-		<div
-			class="absolute border border-neutral-500"
-			style:left="{layout.cornerMarks.bottomLeft.x}cm"
-			style:top="{layout.cornerMarks.bottomLeft.y}cm"
-			style:width="{layout.cornerMarks.bottomLeft.size}cm"
-			style:height="{layout.cornerMarks.bottomLeft.size}cm"
-		></div>
+		{#if !continuous}
+			<div
+				class="absolute border border-neutral-500"
+				style:left="{layout.cornerMarks.bottomLeft.x}cm"
+				style:top="{layout.cornerMarks.bottomLeft.y}cm"
+				style:width="{layout.cornerMarks.bottomLeft.size}cm"
+				style:height="{layout.cornerMarks.bottomLeft.size}cm"
+			></div>
 
-		<div
-			class="absolute border border-neutral-500"
-			style:left="{layout.cornerMarks.bottomRight.x}cm"
-			style:top="{layout.cornerMarks.bottomRight.y}cm"
-			style:width="{layout.cornerMarks.bottomRight.size}cm"
-			style:height="{layout.cornerMarks.bottomRight.size}cm"
-		></div>
+			<div
+				class="absolute border border-neutral-500"
+				style:left="{layout.cornerMarks.bottomRight.x}cm"
+				style:top="{layout.cornerMarks.bottomRight.y}cm"
+				style:width="{layout.cornerMarks.bottomRight.size}cm"
+				style:height="{layout.cornerMarks.bottomRight.size}cm"
+			></div>
+		{/if}
+
+		{#each pageBreaks as breakCm (breakCm)}
+			<div class="page-break-line absolute right-0 left-0" style:top="{breakCm}cm"></div>
+		{/each}
 	</div>
 
 	{#if editable}
 		<div
 			class="writable-surface no-print"
 			style:top="{area.topCm}cm"
-			style:height="{area.heightCm}cm"
+			style:height="{writableHeightCm}cm"
 			aria-hidden="true"
 		></div>
 	{/if}
@@ -667,6 +725,7 @@
 			onemptyenter={() => handleEmptyZoneEnter(zone.id)}
 		/>
 	{/each}
+	</div>
 </div>
 
 {#if editable}
@@ -680,6 +739,40 @@
 {/if}
 
 <style>
+	.sheet-outer {
+		position: relative;
+	}
+
+	.sheet-outer.continuous {
+		display: flex;
+		align-items: flex-start;
+	}
+
+	.page-labels {
+		position: relative;
+		flex-shrink: 0;
+		width: 3.25rem;
+		margin-right: 0.625rem;
+	}
+
+	.page-label {
+		position: absolute;
+		left: 0;
+		font-family: ui-sans-serif, system-ui, sans-serif;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		line-height: 1;
+		color: oklch(0.58 0 0);
+		white-space: nowrap;
+		transform: translateY(0.35rem);
+	}
+
+	.page-break-line {
+		border-top: 2px solid oklch(0.72 0 0);
+		pointer-events: none;
+		z-index: 1;
+	}
+
 	.writable-surface {
 		position: absolute;
 		right: 0;
@@ -736,14 +829,29 @@
 	}
 
 	@media print {
+		.sheet-outer.continuous {
+			display: block;
+		}
+
+		.page-labels {
+			display: none !important;
+		}
+
+		.page-break-line {
+			display: none !important;
+		}
+
 		.bristol-sheet {
 			box-shadow: none !important;
 			background: transparent !important;
+		}
+
+		.bristol-sheet:not(.print-clip-child) {
 			page-break-after: always;
 			break-after: page;
 		}
 
-		.bristol-sheet:last-child {
+		.bristol-sheet:not(.print-clip-child):last-child {
 			page-break-after: auto;
 			break-after: auto;
 		}
